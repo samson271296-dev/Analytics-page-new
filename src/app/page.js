@@ -37,7 +37,7 @@ export default function Home() {
 
           <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <h2 className="mb-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              Ticket Detail Report
+              Agent Ticket Detail Report
             </h2>
             <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
               New report: Ticket No, Created/Resolved dates, Assigned To, Disposed By, Landing Queue, and full Excel columns.
@@ -47,13 +47,13 @@ export default function Home() {
                 href="/ticket-detail-report/upload"
                 className="flex h-10 items-center justify-center rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
-                Upload Ticket Detail
+                Upload Agent Ticket Detail
               </Link>
               <Link
                 href="/ticket-detail-report/dashboard"
                 className="flex h-10 items-center justify-center rounded-lg border border-zinc-300 px-4 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800"
               >
-                Ticket Detail Dashboard
+                 Agent Ticket Detail Dashboard
               </Link>
             </div>
           </section>
