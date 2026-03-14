@@ -121,6 +121,7 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showFullDetailsTable, setShowFullDetailsTable] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
   const tableScrollRef = useRef(null);
   const pdfExportRef = useRef(null);
 
@@ -215,6 +216,7 @@ export default function DashboardPage() {
 
   const exportToPdf = async () => {
     if (!pdfExportRef.current) return;
+    setPdfExporting(true);
     const saved = new Map();
     const needsConvert = (v) => v && (v.includes("lab(") || v.includes("lch(") || v.includes("oklch("));
     const toHex = (v) => (needsConvert(v) ? cssColorToHex(v) : null);
@@ -271,6 +273,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("PDF export failed:", err);
     } finally {
+      setPdfExporting(false);
       if (pdfExportRef.current && savedRoot) {
         const root = pdfExportRef.current;
         root.style.overflow = savedRoot.overflow ?? "";
@@ -568,10 +571,17 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={exportToPdf}
-            disabled={!metrics}
-            className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            disabled={!metrics || pdfExporting}
+            className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 inline-flex items-center gap-2"
           >
-            Export to PDF
+            {pdfExporting ? (
+              <>
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden />
+                Exporting…
+              </>
+            ) : (
+              "Export to PDF"
+            )}
           </button>
           <span className="text-xs text-zinc-500 dark:text-zinc-400">
             Exports summary and all charts below.
