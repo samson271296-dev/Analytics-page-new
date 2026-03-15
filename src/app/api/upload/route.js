@@ -3,9 +3,15 @@ import * as XLSX from "xlsx";
 import connect from "@/lib/db";
 import AssignedToResolveReport from "@/models/AssignedToResolveReport";
 
+// Parse dates coming from Excel: Date objects, Excel serial numbers, or strings.
 function parseDate(val) {
   if (val == null || val === "") return null;
-  if (val instanceof Date) return val;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === "number") {
+    // Excel serial: days since 1900-01-01, with 25569 = 1970-01-01
+    const d = new Date((val - 25569) * 86400 * 1000);
+    return isNaN(d.getTime()) ? null : d;
+  }
   const d = new Date(val);
   return isNaN(d.getTime()) ? null : d;
 }

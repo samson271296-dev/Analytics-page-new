@@ -121,14 +121,14 @@ export async function GET(request) {
     ]),
       AssignedToResolveReport.aggregate([
         ...baseStages,
+        { $match: { resolvedAt: { $ne: null, $exists: true } } },
         {
           $group: {
             _id: {
-              // Group by createdAt day using IST (+05:30) so dates
-              // match what the user sees on the dashboard filters.
+              // Group by dispose date (resolvedAt) using IST (+05:30).
               $dateToString: {
                 format: "%Y-%m-%d",
-                date: "$createdAt",
+                date: "$resolvedAt",
                 timezone: "+05:30",
               },
             },

@@ -976,15 +976,15 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Tickets by day */}
+        {/* Tickets by day (by dispose date) */}
         {charts?.byDay?.length > 0 && (
           <div data-pdf-section className="mb-8 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <Line
               data={{
                 labels: charts.byDay.map((x) => x.label),
-                datasets: [{ label: "Tickets", data: charts.byDay.map((x) => x.count), borderColor: "rgba(59, 130, 246, 1)", backgroundColor: "rgba(59, 130, 246, 0.1)", fill: true, tension: 0.2 }],
+                datasets: [{ label: "Tickets disposed", data: charts.byDay.map((x) => x.count), borderColor: "rgba(59, 130, 246, 1)", backgroundColor: "rgba(59, 130, 246, 0.1)", fill: true, tension: 0.2 }],
               }}
-              options={lineChartOptions}
+              options={{ ...lineChartOptions, plugins: { ...lineChartOptions.plugins, title: { ...lineChartOptions.plugins.title, text: "Tickets by day (by dispose date)" } } }}
             />
           </div>
         )}
