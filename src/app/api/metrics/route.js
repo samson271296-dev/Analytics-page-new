@@ -21,21 +21,39 @@ function parseDate(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function parseDateTime(dateStr, timeStr) {
+  if (dateStr == null || String(dateStr).trim() === "") return null;
+  const dateOnly = String(dateStr).trim();
+  const timeOnly = timeStr != null && String(timeStr).trim() !== "" ? String(timeStr).trim() : null;
+  const combined = timeOnly ? `${dateOnly}T${timeOnly}` : `${dateOnly}T00:00:00`;
+  const d = new Date(combined);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function buildFilterQuery(searchParams) {
   const query = {};
-  const dateFrom = parseDate(searchParams.get("dateFrom"));
-  const dateTo = parseDate(searchParams.get("dateTo"));
-  if (dateFrom || dateTo) {
+  // Prefer UTC ISO range from frontend (user's local time converted to UTC); fallback to date/time params
+  const dateTimeFrom = searchParams.get("dateTimeFrom")?.trim();
+  const dateTimeTo = searchParams.get("dateTimeTo")?.trim();
+  let startDate = dateTimeFrom ? (() => { const d = new Date(dateTimeFrom); return isNaN(d.getTime()) ? null : d; })() : null;
+  let endDate = dateTimeTo ? (() => { const d = new Date(dateTimeTo); return isNaN(d.getTime()) ? null : d; })() : null;
+  if (!startDate || !endDate) {
+    const dateFrom = searchParams.get("dateFrom")?.trim();
+    const timeFrom = searchParams.get("timeFrom")?.trim();
+    const dateTo = searchParams.get("dateTo")?.trim();
+    const timeTo = searchParams.get("timeTo")?.trim();
+    if (!startDate) startDate = parseDateTime(dateFrom, timeFrom);
+    if (!endDate && dateTo) endDate = timeTo ? parseDateTime(dateTo, timeTo) : (() => { const e = new Date(dateTo + "T23:59:59.999"); return isNaN(e.getTime()) ? null : e; })();
+  }
+  if (startDate || endDate) {
     query.createdAt = {};
-    if (dateFrom) query.createdAt.$gte = dateFrom;
-    if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
-      query.createdAt.$lte = end;
-    }
+    if (startDate) query.createdAt.$gte = startDate;
+    if (endDate) query.createdAt.$lte = endDate;
   }
   const assignToAgentName = searchParams.get("assignToAgentName")?.trim();
+  const excludeAssignToAgentName = (searchParams.getAll?.("excludeAssignToAgentName") || []).filter(Boolean);
   const disposeByAgentName = searchParams.get("disposeByAgentName")?.trim();
+  const excludeDisposeByAgentName = (searchParams.getAll?.("excludeDisposeByAgentName") || []).filter(Boolean);
   const dispositionSubStatus = searchParams.get("dispositionSubStatus")?.trim();
   const dispositionStatus = searchParams.get("dispositionStatus")?.trim();
   const landingQueue = searchParams.get("landingQueue")?.trim();
@@ -44,7 +62,9 @@ function buildFilterQuery(searchParams) {
   const createReason = searchParams.get("createReason")?.trim();
   const ticketId = searchParams.get("ticketId")?.trim();
   if (assignToAgentName) query["raw.assignToAgentName"] = assignToAgentName;
+  else if (excludeAssignToAgentName.length > 0) query["raw.assignToAgentName"] = { $nin: excludeAssignToAgentName };
   if (disposeByAgentName) query["raw.disposeByAgentName"] = disposeByAgentName;
+  else if (excludeDisposeByAgentName.length > 0) query["raw.disposeByAgentName"] = { $nin: excludeDisposeByAgentName };
   if (dispositionSubStatus) query.dispositionSubStatus = dispositionSubStatus;
   if (dispositionStatus) query["raw.DispositionStatus"] = dispositionStatus;
   if (landingQueue) query["raw.Landing Queue Name"] = landingQueue;

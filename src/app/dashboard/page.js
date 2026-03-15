@@ -39,6 +39,9 @@ ChartJS.defaults.color = "#374151";
 ChartJS.defaults.borderColor = "#e5e7eb";
 ChartJS.defaults.font.family = "system-ui, sans-serif";
 
+/** Set to true to hide all SLA-related UI (metrics, charts). */
+const HIDE_SLA_UI = true;
+
 /** Plugin config so counts are always visible (for PDF export and at a glance) */
 const dataLabelsPlugin = {
   id: "datalabels",
@@ -92,14 +95,37 @@ const CHART_COLORS = [
 function buildQueryString(filters) {
   const p = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
-    if (v != null && String(v).trim() !== "") p.set(k, String(v).trim());
+    if (k === "excludeAssignToAgentName" && Array.isArray(v)) {
+      v.forEach((agent) => {
+        if (agent != null && String(agent).trim() !== "")
+          p.append("excludeAssignToAgentName", String(agent).trim());
+      });
+    } else if (k === "excludeDisposeByAgentName" && Array.isArray(v)) {
+      v.forEach((agent) => {
+        if (agent != null && String(agent).trim() !== "")
+          p.append("excludeDisposeByAgentName", String(agent).trim());
+      });
+    } else if (v != null && String(v).trim() !== "" && k !== "dateFrom" && k !== "timeFrom" && k !== "dateTo" && k !== "timeTo") {
+      p.set(k, String(v).trim());
+    }
   });
+  // Send date/time range as UTC ISO so server compares correctly with stored createdAt (UTC)
+  if (filters.dateFrom && String(filters.dateFrom).trim()) {
+    const localStart = new Date(String(filters.dateFrom).trim() + "T" + (filters.timeFrom && String(filters.timeFrom).trim() ? String(filters.timeFrom).trim() : "00:00:00"));
+    if (!isNaN(localStart.getTime())) p.set("dateTimeFrom", localStart.toISOString());
+  }
+  if (filters.dateTo && String(filters.dateTo).trim()) {
+    const localEnd = new Date(String(filters.dateTo).trim() + "T" + (filters.timeTo && String(filters.timeTo).trim() ? String(filters.timeTo).trim() : "23:59:59.999"));
+    if (!isNaN(localEnd.getTime())) p.set("dateTimeTo", localEnd.toISOString());
+  }
   return p.toString();
 }
 
 const emptyFilters = {
   dateFrom: "",
+  timeFrom: "",
   dateTo: "",
+  timeTo: "",
   assignToAgentName: "",
   disposeByAgentName: "",
   dispositionSubStatus: "",
@@ -109,6 +135,8 @@ const emptyFilters = {
   source: "",
   createReason: "",
   ticketId: "",
+  excludeAssignToAgentName: [],
+  excludeDisposeByAgentName: [],
 };
 
 export default function DashboardPage() {
@@ -412,7 +440,7 @@ export default function DashboardPage() {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Date from</label>
+              <label className="mb-1 block text-xs text-zinc-500">From date</label>
               <input
                 type="date"
                 value={filters.dateFrom}
@@ -421,11 +449,29 @@ export default function DashboardPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Date to</label>
+              <label className="mb-1 block text-xs text-zinc-500">From time</label>
+              <input
+                type="time"
+                value={filters.timeFrom}
+                onChange={(e) => setFilters((f) => ({ ...f, timeFrom: e.target.value }))}
+                className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">To date</label>
               <input
                 type="date"
                 value={filters.dateTo}
                 onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+                className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">To time</label>
+              <input
+                type="time"
+                value={filters.timeTo}
+                onChange={(e) => setFilters((f) => ({ ...f, timeTo: e.target.value }))}
                 className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
               />
             </div>
@@ -543,6 +589,82 @@ export default function DashboardPage() {
                 className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
               />
             </div>
+            <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5">
+              <label className="mb-1 block text-xs text-zinc-500">Exclude agents (Assign to agent)</label>
+              <p className="mb-2 text-xs text-zinc-400 dark:text-zinc-500">
+                Exclude these agents from metrics, charts, and table. Select one or more.
+              </p>
+              <div className="max-h-32 overflow-y-auto rounded border border-zinc-300 bg-white p-2 dark:border-zinc-600 dark:bg-zinc-800">
+                {(opts.assignToAgentNames || []).length === 0 ? (
+                  <span className="text-sm text-zinc-500">No agents loaded</span>
+                ) : (
+                  (opts.assignToAgentNames || []).map((agent) => (
+                    <label
+                      key={agent}
+                      className="mb-1 flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(filters.excludeAssignToAgentName || []).includes(agent)}
+                        onChange={() =>
+                          setFilters((f) => ({
+                            ...f,
+                            excludeAssignToAgentName: (f.excludeAssignToAgentName || []).includes(agent)
+                              ? (f.excludeAssignToAgentName || []).filter((a) => a !== agent)
+                              : [...(f.excludeAssignToAgentName || []), agent],
+                          }))
+                        }
+                        className="rounded border-zinc-300"
+                      />
+                      <span className="text-sm text-zinc-700 dark:text-zinc-300">{agent}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {(filters.excludeAssignToAgentName || []).length > 0 && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  Excluding {(filters.excludeAssignToAgentName || []).length} agent(s)
+                </p>
+              )}
+            </div>
+            <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5">
+              <label className="mb-1 block text-xs text-zinc-500">Exclude agents (Dispose by agent)</label>
+              <p className="mb-2 text-xs text-zinc-400 dark:text-zinc-500">
+                Exclude these dispose-by agents from metrics, charts, and table. Select one or more.
+              </p>
+              <div className="max-h-32 overflow-y-auto rounded border border-zinc-300 bg-white p-2 dark:border-zinc-600 dark:bg-zinc-800">
+                {(opts.disposeByAgentNames || []).length === 0 ? (
+                  <span className="text-sm text-zinc-500">No agents loaded</span>
+                ) : (
+                  (opts.disposeByAgentNames || []).map((agent) => (
+                    <label
+                      key={agent}
+                      className="mb-1 flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(filters.excludeDisposeByAgentName || []).includes(agent)}
+                        onChange={() =>
+                          setFilters((f) => ({
+                            ...f,
+                            excludeDisposeByAgentName: (f.excludeDisposeByAgentName || []).includes(agent)
+                              ? (f.excludeDisposeByAgentName || []).filter((a) => a !== agent)
+                              : [...(f.excludeDisposeByAgentName || []), agent],
+                          }))
+                        }
+                        className="rounded border-zinc-300"
+                      />
+                      <span className="text-sm text-zinc-700 dark:text-zinc-300">{agent}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {(filters.excludeDisposeByAgentName || []).length > 0 && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  Excluding {(filters.excludeDisposeByAgentName || []).length} dispose-by agent(s)
+                </p>
+              )}
+            </div>
           </div>
           <div className="mt-3 flex gap-2">
             <button
@@ -561,6 +683,23 @@ export default function DashboardPage() {
               Clear filters
             </button>
           </div>
+          {((appliedFilters.dateFrom || appliedFilters.dateTo)) && (
+            <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+              Showing data from{" "}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                {appliedFilters.dateFrom
+                  ? `${appliedFilters.dateFrom} ${(appliedFilters.timeFrom || "00:00")}`
+                  : "—"}
+              </span>
+              {" "}to{" "}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                {appliedFilters.dateTo
+                  ? `${appliedFilters.dateTo} ${(appliedFilters.timeTo || "23:59")}`
+                  : "—"}
+              </span>
+              {" "}(Created date/time)
+            </p>
+          )}
         </section>
 
         {loading && metrics && (
@@ -610,13 +749,17 @@ export default function DashboardPage() {
                 {metrics.pendingPercent ?? 0}%
               </span> ({metrics.overallPending ?? 0})
             </span>
-            <span className="text-zinc-500 dark:text-zinc-400">•</span>
-            <span>
-              <span className="text-zinc-600 dark:text-zinc-300">Out of SLA:</span>{" "}
-              <span className="font-medium text-red-600 dark:text-red-400">
-                {metrics.outOfSlaCount ?? 0}
-              </span> ({metrics.outOfSlaPercent ?? 0}%)
-            </span>
+            {!HIDE_SLA_UI && (
+              <>
+                <span className="text-zinc-500 dark:text-zinc-400">•</span>
+                <span>
+                  <span className="text-zinc-600 dark:text-zinc-300">Out of SLA:</span>{" "}
+                  <span className="font-medium text-red-600 dark:text-red-400">
+                    {metrics.outOfSlaCount ?? 0}
+                  </span> ({metrics.outOfSlaPercent ?? 0}%)
+                </span>
+              </>
+            )}
           </div>
         )}
 
@@ -668,7 +811,9 @@ export default function DashboardPage() {
         {/* Metric cards */}
         <div data-pdf-section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {metrics &&
-            Object.entries(metricLabels).map(([key, label]) => (
+            Object.entries(metricLabels)
+              .filter(([key]) => !HIDE_SLA_UI || (key !== "outOfSlaCount" && key !== "outOfSlaPercent"))
+              .map(([key, label]) => (
               <div
                 key={key}
                 className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -807,7 +952,7 @@ export default function DashboardPage() {
               />
             </div>
           )}
-          {charts?.byOldIsOutOfSla?.length > 0 && (
+          {!HIDE_SLA_UI && charts?.byOldIsOutOfSla?.length > 0 && (
             <div data-pdf-section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
               <Doughnut
                 data={{

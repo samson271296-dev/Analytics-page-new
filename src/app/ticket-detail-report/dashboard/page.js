@@ -38,6 +38,9 @@ ChartJS.defaults.color = "#374151";
 ChartJS.defaults.borderColor = "#e5e7eb";
 ChartJS.defaults.font.family = "system-ui, sans-serif";
 
+/** Set to true to hide all SLA-related UI (metrics, charts). */
+const HIDE_SLA_UI = true;
+
 const dataLabelsPlugin = {
   id: "datalabels",
   formatter: (value) => (value != null ? String(value) : ""),
@@ -57,21 +60,62 @@ const CHART_COLORS = [
 
 const API_PREFIX = "/api/ticket-detail-report";
 
+const TICKET_DETAIL_COLUMN_ORDER = [
+  "Ticket No", "Created Date", "Created Time", "Created By", "Assigned To", "Emp Code", "Last Source Type", "Resolved Date", "Resolved Time",
+  "Last Conversation Date", "Last Conversation Time", "Assignee Employee Code", "Creator Employee Code", "Landing Folder", "Disposed Folder", "Disposed By",
+  "First Response By", "First Response Time", "First Response Date", "Last Response By", "Last Response Time", "Resolved By",
+  "Diff Time Created And First Reply", "Diff Time Created And Resolve", "Ticket Last Assigned Date Time", "Reopen Count", "Interation count Customer",
+  "Dispose Count", "Interaction Count Agent", "Last Disposed Date Time", "Last Reopen Time", "Last Reopen Date", "Firsrt response SLA",
+  "Diff Last Customer Reply and First Agent Reply", "Diff Time Created and First Assign", "Diff Time Resolved and First Assign", "Diff Time Resolved and Created",
+  "First Assign Time", "First Assign Date", "Average Agent Response Time", "Diff Time Created And First Reply Working Hours", "First Disposed Time", "First Disposed By",
+  "Diff Time First Assign And First Response", "Ticket Last Assigned Date", "Ticket Last Assigned Time", "Create to First Dispose Diff", "Last Disposed Date", "Last Disposed Time",
+  "Diff Time Reolved And Reopen Working Hours", "Resolved By Emp Code", "Full Resolution Time Exclude Customer Time", "Resolution Time Exclude Customer Time Business Hours",
+  "Diff Time Create and First Assign Working Hours", "FTR First Reply After First Dispose", "Landing Queue", "Landing Queue Ageing", "Last Queue Ageing", "Last Reopen By",
+  "Diff Time Create and Resolve Custom Working Hours", "Diff Time Create and First Disposed", "Diff Time First Assign and First Disposed", "First Assignee Employee Code",
+  "First Disposed By Employee Code", "Disposed By Employee Code", "First Response By Employee Code", "Last Response By Employee Code", "Total Interaction Count", "System Interaction Count",
+  "First Assignee Zone", "First Disposed Day Of Year", "First Disposed Week Of Year", "First Disposed Month", "Diff Between First Dispose and Last Resolve",
+  "First Response SLA Working Hours", "Diff Between First Assigned And First Disposed", "Folder", "Sub Folder", "Disposition Folder Level 3", "Disposition Folder Level 4", "FTR",
+  "Diff Between Last Dispose To Resolve Time", "Disposition Folder Hierarchy", "Day SLA Status", "Create Source Type", "First Assignee Employee Name", "Diff Create To Current Time",
+  "Create Reason", "Current Queue Name", "Landing Folder Hierarchy", "Diff Between Last Assign To Resolve Time", "Last Callback Time", "Last Reopen By Emp Code",
+  "Days Between Create To Current Date", "Ticket URL", "Firsrt response SLA New", "Custom FTR", "Previous Assigned To", "Manual Reopen Count", "Last Feedback Recieved",
+  "Create To Resolve In Days", "Create To Resolve In Weeks", "Agent First Dispose Time", "Bot First Dispose Time", "Merge Ticket Ids", "Merged Ticket Count", "Dispose Folder Group",
+  "Assigned Emp City", "Last Queue", "Resolved By Uploader", "QueueGroup Name", "First Resolved Queue", "First Resolved By Employee Email", "First Resolved Time",
+  "First Resolved By Agent Center Name", "Last Resolved By Agent Center Name", "Creator Email Id", "SIC Name", "Pending No of Days", "Pending At Designation", "BCCD Code", "BCCD State", "BCCD City",
+  "Last Customer Response Time", "First Dispose Folder Hierarchy", "Ticket Type(parent/sub)", "Average Assign To Dispose Time", "Last Resolved By Employee Email", "Pending At Designation (PR)", "MOC",
+  "Bot To Agent Transfer Time", "Bot To Agent First Reply Time", "Assignee Id", "BRANCH", "Last Queue In Date", "SIC Code", "ASIC Code", "ASIC Name",
+  "Diff Btw Create To Resolve Respect To Working Hours", "First Reopen Time", "Assignee Manager Name", "Create To First Reply Sla", "Child Ticket IDs",
+  "Sub Ticket Detail 1", "Sub Ticket Detail 2", "Sub Ticket Detail 3", "Sub Ticket Detail 4", "Sub Ticket Detail 5",
+  "Bot Transfer To Agent First Reply SLA (4hrs)", "Agent Reply Count(Excluding Bot)", "Bot Reply Count", "Folder Sla", "Create To First Dispose Folder SLA",
+];
+
+function getTableColumns(reportsList) {
+  if (!reportsList?.length) return [];
+  const allKeys = [...new Set(reportsList.flatMap((r) => Object.keys(r.raw || {})))];
+  const orderSet = new Set(TICKET_DETAIL_COLUMN_ORDER);
+  const inOrder = TICKET_DETAIL_COLUMN_ORDER.filter((k) => allKeys.includes(k));
+  const extra = allKeys.filter((k) => !orderSet.has(k)).sort();
+  return [...inOrder, ...extra];
+}
+
 function buildQueryString(filters) {
   const p = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
-    if (v != null && String(v).trim() !== "") p.set(k, String(v).trim());
+    if (k === "excludeAssignedTo" && Array.isArray(v)) {
+      v.forEach((agent) => { if (agent != null && String(agent).trim() !== "") p.append("excludeAssignedTo", String(agent).trim()); });
+    } else if (v != null && String(v).trim() !== "") {
+      p.set(k, String(v).trim());
+    }
   });
   return p.toString();
 }
 
 const emptyFilters = {
-  dateFrom: "", dateTo: "", assignedTo: "", disposedBy: "", landingQueue: "", lastQueue: "", createReason: "", ticketNo: "",
+  dateFrom: "", timeFrom: "", dateTo: "", timeTo: "", assignedTo: "", disposedBy: "", landingQueue: "", lastQueue: "", createReason: "", ticketNo: "", excludeAssignedTo: [],
 };
 
 const metricLabels = {
-  totalTickets: "Total tickets", totalResolved: "Resolved", overallPending: "Pending",
-  resolvedPercent: "Resolved %", pendingPercent: "Pending %", createdToday: "Created today", resolvedToday: "Resolved today",
+  totalTickets: "Total tickets", totalResolved: "Resolved", overallPending: "Pending (no reply yet)",
+  resolvedPercent: "Resolved %", pendingPercent: "Pending % (no reply)", createdToday: "Created today", resolvedToday: "Resolved today",
   outOfSlaCount: "Out of SLA", outOfSlaPercent: "Out of SLA %",
 };
 
@@ -80,6 +124,7 @@ export default function TicketDetailDashboardPage() {
   const [appliedFilters, setAppliedFilters] = useState(emptyFilters);
   const [filterOptions, setFilterOptions] = useState(null);
   const [metrics, setMetrics] = useState(null);
+  const [agentProductivity, setAgentProductivity] = useState(null);
   const [reports, setReports] = useState(null);
   const [charts, setCharts] = useState(null);
   const [error, setError] = useState(null);
@@ -104,10 +149,11 @@ export default function TicketDetailDashboardPage() {
     try {
       const q = queryString ? `?${queryString}` : "";
       const reportsQuery = q ? `${q}&limit=50000` : "?limit=50000";
-      const [metricsRes, reportsRes, chartsRes] = await Promise.all([
+      const [metricsRes, reportsRes, chartsRes, productivityRes] = await Promise.all([
         fetch(`${API_PREFIX}/metrics${q}`),
         fetch(`${API_PREFIX}/reports${reportsQuery}`),
         fetch(`${API_PREFIX}/charts${q}`),
+        fetch(`${API_PREFIX}/agent-productivity${q}`),
       ]);
       if (!metricsRes.ok) throw new Error("Failed to load metrics");
       if (!reportsRes.ok) throw new Error("Failed to load report details");
@@ -118,6 +164,12 @@ export default function TicketDetailDashboardPage() {
       setMetrics(metricsData);
       setReports(reportsData);
       setCharts(chartsData);
+      if (productivityRes.ok) {
+        const productivityData = await productivityRes.json();
+        setAgentProductivity(productivityData);
+      } else {
+        setAgentProductivity(null);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -199,7 +251,7 @@ export default function TicketDetailDashboardPage() {
     return <div className="flex min-h-screen items-center justify-center"><p className="text-zinc-600 dark:text-zinc-400">Loading ticket detail dashboard…</p></div>;
   }
 
-  const columns = reports?.reports?.length > 0 ? Object.keys(reports.reports[0].raw || {}) : [];
+  const columns = getTableColumns(reportsList);
   const chartTextColor = "#374151";
   const chartOptions = {
     responsive: true,
@@ -218,7 +270,7 @@ export default function TicketDetailDashboardPage() {
   };
 
   const barData = metrics ? { labels: ["Created today", "Resolved today"], datasets: [{ label: "Count", data: [metrics.createdToday, metrics.resolvedToday], backgroundColor: CHART_COLORS.slice(0, 2) }] } : null;
-  const doughnutData = metrics ? { labels: ["Resolved", "Pending"], datasets: [{ data: [metrics.totalResolved, metrics.overallPending], backgroundColor: ["rgba(34, 197, 94, 0.8)", "rgba(245, 158, 11, 0.8)"], borderWidth: 0 }] } : null;
+  const doughnutData = metrics ? { labels: ["Resolved", "Pending (no reply yet)"], datasets: [{ data: [metrics.totalResolved, metrics.overallPending], backgroundColor: ["rgba(34, 197, 94, 0.8)", "rgba(245, 158, 11, 0.8)"], borderWidth: 0 }] } : null;
 
   const renderBarChart = (data, title, horizontal = false) => (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
@@ -236,8 +288,11 @@ export default function TicketDetailDashboardPage() {
     { key: "byAssignedEmpCity", title: "Assigned Emp City" }, { key: "byAssigneeManagerName", title: "Assignee Manager" },
     { key: "byLastReopenBy", title: "Last Reopen By" }, { key: "byDisposeFolderGroup", title: "Dispose Folder Group" },
     { key: "byFirstResolvedByAgentCenter", title: "First Resolved By Agent Center" }, { key: "byLastResolvedByAgentCenter", title: "Last Resolved By Agent Center" },
-    { key: "byFirstResponseSla", title: "First Response SLA" }, { key: "byFirstResponseSlaNew", title: "First Response SLA (New)" }, { key: "byFolderSla", title: "Folder SLA" },
-    { key: "byCreateToFirstDisposeFolderSla", title: "Create To First Dispose Folder SLA" }, { key: "byPendingAtDesignation", title: "Pending At Designation" },
+    ...(HIDE_SLA_UI ? [] : [
+      { key: "byFirstResponseSla", title: "First Response SLA" }, { key: "byFirstResponseSlaNew", title: "First Response SLA (New)" }, { key: "byFolderSla", title: "Folder SLA" },
+      { key: "byCreateToFirstDisposeFolderSla", title: "Create To First Dispose Folder SLA" },
+    ]),
+    { key: "byPendingAtDesignation", title: "Pending At Designation" },
     { key: "byResolvedByUploader", title: "Resolved By Uploader" }, { key: "byLastSourceType", title: "Last Source Type" }, { key: "byCreatedBy", title: "Created By" },
     { key: "byLandingFolderHierarchy", title: "Landing Folder Hierarchy" },
   ];
@@ -255,19 +310,47 @@ export default function TicketDetailDashboardPage() {
         <section className="mb-8 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Filters</h2>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            <div><label className="mb-1 block text-xs text-zinc-500">Date from</label><input type="date" value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
-            <div><label className="mb-1 block text-xs text-zinc-500">Date to</label><input type="date" value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">From date</label><input type="date" value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">From time</label><input type="time" value={filters.timeFrom} onChange={(e) => setFilters((f) => ({ ...f, timeFrom: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">To date</label><input type="date" value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">To time</label><input type="time" value={filters.timeTo} onChange={(e) => setFilters((f) => ({ ...f, timeTo: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Assigned To</label><select value={filters.assignedTo} onChange={(e) => setFilters((f) => ({ ...f, assignedTo: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"><option value="">All</option>{(opts.assignedToOptions || []).map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Disposed By</label><select value={filters.disposedBy} onChange={(e) => setFilters((f) => ({ ...f, disposedBy: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"><option value="">All</option>{(opts.disposedByOptions || []).map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Landing Queue</label><select value={filters.landingQueue} onChange={(e) => setFilters((f) => ({ ...f, landingQueue: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"><option value="">All</option>{(opts.landingQueueOptions || []).map((q) => <option key={q} value={q}>{q}</option>)}</select></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Last Queue</label><select value={filters.lastQueue} onChange={(e) => setFilters((f) => ({ ...f, lastQueue: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"><option value="">All</option>{(opts.lastQueueOptions || []).map((q) => <option key={q} value={q}>{q}</option>)}</select></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Create Reason</label><select value={filters.createReason} onChange={(e) => setFilters((f) => ({ ...f, createReason: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"><option value="">All</option>{(opts.createReasonOptions || []).map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Ticket No</label><input type="text" placeholder="e.g. 4773469874340" value={filters.ticketNo} onChange={(e) => setFilters((f) => ({ ...f, ticketNo: e.target.value }))} className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" /></div>
+            <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5">
+              <label className="mb-1 block text-xs text-zinc-500">Exclude agents (Assigned To)</label>
+              <p className="mb-2 text-xs text-zinc-400 dark:text-zinc-500">Exclude these agents from metrics, charts, and table. Select one or more.</p>
+              <div className="max-h-32 overflow-y-auto rounded border border-zinc-300 bg-white p-2 dark:border-zinc-600 dark:bg-zinc-800">
+                {(opts.assignedToOptions || []).length === 0 ? <span className="text-sm text-zinc-500">No agents loaded</span> : (opts.assignedToOptions || []).map((agent) => (
+                  <label key={agent} className="mb-1 flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700">
+                    <input type="checkbox" checked={(filters.excludeAssignedTo || []).includes(agent)} onChange={() => setFilters((f) => ({ ...f, excludeAssignedTo: (f.excludeAssignedTo || []).includes(agent) ? (f.excludeAssignedTo || []).filter((a) => a !== agent) : [...(f.excludeAssignedTo || []), agent] }))} className="rounded border-zinc-300" />
+                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{agent}</span>
+                  </label>
+                ))}
+              </div>
+              {(filters.excludeAssignedTo || []).length > 0 && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Excluding {(filters.excludeAssignedTo || []).length} agent(s)</p>}
+            </div>
           </div>
           <div className="mt-3 flex gap-2">
             <button type="button" onClick={applyFilters} disabled={loading} className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Apply</button>
             <button type="button" onClick={clearFilters} className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Clear filters</button>
           </div>
+          {((appliedFilters.dateFrom || appliedFilters.dateTo)) && (
+            <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+              Showing data from{" "}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                {appliedFilters.dateFrom ? `${appliedFilters.dateFrom} ${(appliedFilters.timeFrom || "00:00")}` : "—"}
+              </span>
+              {" "}to{" "}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                {appliedFilters.dateTo ? `${appliedFilters.dateTo} ${(appliedFilters.timeTo || "23:59")}` : "—"}
+              </span>
+              {" "}(Created date/time)
+            </p>
+          )}
         </section>
 
         {loading && metrics && <p className="mb-4 text-sm text-zinc-500">Updating data…</p>}
@@ -302,19 +385,128 @@ export default function TicketDetailDashboardPage() {
                 <span className="text-xl font-semibold text-emerald-600 dark:text-emerald-400">{metrics.resolvedPercent ?? 0}% resolved</span>
                 <span className="text-zinc-500">({metrics.totalResolved?.toLocaleString() ?? 0})</span>
                 <span className="text-zinc-400">|</span>
-                <span className="text-xl font-semibold text-amber-600 dark:text-amber-400">{metrics.pendingPercent ?? 0}% pending</span>
+                <span className="text-xl font-semibold text-amber-600 dark:text-amber-400">{metrics.pendingPercent ?? 0}% pending (no reply yet)</span>
                 <span className="text-zinc-500">({metrics.overallPending?.toLocaleString() ?? 0})</span>
-                <span className="text-zinc-400">|</span>
-                <span className="text-lg font-medium text-red-600 dark:text-red-400">{metrics.outOfSlaCount ?? 0} out of SLA</span>
-                <span className="text-zinc-500">({metrics.outOfSlaPercent ?? 0}%)</span>
+                {!HIDE_SLA_UI && (
+                  <>
+                    <span className="text-zinc-400">|</span>
+                    <span className="text-lg font-medium text-red-600 dark:text-red-400">{metrics.outOfSlaCount ?? 0} out of SLA</span>
+                    <span className="text-zinc-500">({metrics.outOfSlaPercent ?? 0}%)</span>
+                  </>
+                )}
                 <span className="text-zinc-400">|</span>
                 <span className="text-zinc-600 dark:text-zinc-300">Today: {metrics.createdToday ?? 0} created, {metrics.resolvedToday ?? 0} resolved</span>
               </div>
             </div>
           )}
 
+          {agentProductivity && (
+            <div className="mb-10 rounded-xl border-2 border-indigo-200 bg-indigo-50/50 p-6 dark:border-indigo-800 dark:bg-indigo-950/30">
+              <h2 className="mb-4 text-base font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Agent productivity summary</h2>
+              <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">First response, last response, resolution, and activity metrics — count and percentage of total records.</p>
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Total records</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.total?.toLocaleString() ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">First response by</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.firstResponseBy?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.firstResponseBy?.percent ?? 0}% of total</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Last response by</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.lastResponseBy?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.lastResponseBy?.percent ?? 0}% of total</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Resolved by</p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{agentProductivity.resolvedBy?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.resolvedBy?.percent ?? 0}% of total</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Disposed by</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.disposedBy?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.disposedBy?.percent ?? 0}% of total</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">FTR (Yes)</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.ftrYes?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.ftrYes?.percent ?? 0}% of total</p>
+                </div>
+                {!HIDE_SLA_UI && (
+                  <>
+                    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                      <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">First response within SLA</p>
+                      <p className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{agentProductivity.firstResponseSlaWithin?.count?.toLocaleString() ?? 0}</p>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.firstResponseSlaWithin?.percent ?? 0}% of total</p>
+                    </div>
+                    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                      <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Out of SLA</p>
+                      <p className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">{agentProductivity.outOfSla?.count?.toLocaleString() ?? 0}</p>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.outOfSla?.percent ?? 0}% of total</p>
+                    </div>
+                  </>
+                )}
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Tickets waiting for customer</p>
+                  <p className="mt-1 text-2xl font-bold text-violet-600 dark:text-violet-400">{agentProductivity.waitingForCustomer?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.waitingForCustomer?.percent ?? 0}% of total</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Reopened</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.reopened?.count?.toLocaleString() ?? 0}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.reopened?.percent ?? 0}% of total</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Total interactions</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.totalInteractionCount?.toLocaleString() ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Agent replies (excl. bot)</p>
+                  <p className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.totalAgentReplyCount?.toLocaleString() ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Unique agents (first response)</p>
+                  <p className="mt-1 text-2xl font-bold text-indigo-600 dark:text-indigo-400">{agentProductivity.uniqueFirstResponseAgents ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                  <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Unique agents (resolved by)</p>
+                  <p className="mt-1 text-2xl font-bold text-indigo-600 dark:text-indigo-400">{agentProductivity.uniqueResolvedByAgents ?? 0}</p>
+                </div>
+              </div>
+              <div className="mt-6 border-t border-indigo-200/50 pt-6 dark:border-indigo-800/50">
+                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">More metrics</h3>
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">First assign</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.firstAssign?.count?.toLocaleString() ?? 0}</p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.firstAssign?.percent ?? 0}% of total</p>
+                  </div>
+                  <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Parent tickets</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.parentTickets?.count?.toLocaleString() ?? 0}</p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.parentTickets?.percent ?? 0}% of total</p>
+                  </div>
+                  <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Merged tickets</p>
+                    <p className="mt-1 text-xl font-bold text-zinc-900 dark:text-zinc-50">{agentProductivity.mergedTickets?.count?.toLocaleString() ?? 0}</p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.mergedTickets?.percent ?? 0}% of total</p>
+                  </div>
+                  <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <p className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Pending at designation</p>
+                    <p className="mt-1 text-xl font-bold text-amber-600 dark:text-amber-400">{agentProductivity.pendingAtDesignation?.count?.toLocaleString() ?? 0}</p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">{agentProductivity.pendingAtDesignation?.percent ?? 0}% of total</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {metrics && Object.entries(metricLabels).map(([key, label]) => (
+            {metrics && Object.entries(metricLabels)
+              .filter(([key]) => !HIDE_SLA_UI || (key !== "outOfSlaCount" && key !== "outOfSlaPercent"))
+              .map(([key, label]) => (
               <div key={key} className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">{label}</p>
                 <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{metrics[key] ?? 0}</p>
@@ -324,7 +516,7 @@ export default function TicketDetailDashboardPage() {
 
           <div className="mb-8 grid gap-6 sm:grid-cols-2">
             {barData && <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"><Bar data={barData} options={barChartOptions("Today metrics")} /></div>}
-            {doughnutData && <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"><Doughnut data={doughnutData} options={doughnutChartOptions("Resolved vs Pending")} /></div>}
+            {doughnutData && <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"><Doughnut data={doughnutData} options={doughnutChartOptions("Resolved vs Pending (no reply yet)")} /></div>}
           </div>
 
           <div className="mb-8 grid gap-6 sm:grid-cols-2">
@@ -355,11 +547,11 @@ export default function TicketDetailDashboardPage() {
             </div>
           )}
 
-          {(charts?.byDaySlaStatus?.length > 0 || charts?.byTicketType?.length > 0) && (
+          {((!HIDE_SLA_UI && charts?.byDaySlaStatus?.length > 0) || charts?.byTicketType?.length > 0) && (
             <div className="mb-8">
-              <h2 className="mb-4 text-sm font-semibold uppercase text-zinc-500 dark:text-zinc-400">SLA & status</h2>
+              <h2 className="mb-4 text-sm font-semibold uppercase text-zinc-500 dark:text-zinc-400">{HIDE_SLA_UI ? "Status" : "SLA & status"}</h2>
               <div className="grid gap-6 sm:grid-cols-2">
-                {charts?.byDaySlaStatus?.length > 0 && renderBarChart(charts.byDaySlaStatus, "Day SLA Status")}
+                {!HIDE_SLA_UI && charts?.byDaySlaStatus?.length > 0 && renderBarChart(charts.byDaySlaStatus, "Day SLA Status")}
                 {charts?.byTicketType?.length > 0 && <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"><Doughnut data={{ labels: charts.byTicketType.map((x) => x.label || "(empty)"), datasets: [{ data: charts.byTicketType.map((x) => x.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={doughnutChartOptions("Ticket type (parent/sub)")} /></div>}
               </div>
             </div>
@@ -497,7 +689,7 @@ export default function TicketDetailDashboardPage() {
           )}
 
           <div className="mb-8">
-            <h2 className="mb-4 text-sm font-semibold uppercase text-zinc-500 dark:text-zinc-400">More data – folders, queues, location, SLA, people</h2>
+            <h2 className="mb-4 text-sm font-semibold uppercase text-zinc-500 dark:text-zinc-400">More data – folders, queues, location, people</h2>
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
               {moreChartConfigs.map(({ key, title }) => {
                 const data = charts?.[key];

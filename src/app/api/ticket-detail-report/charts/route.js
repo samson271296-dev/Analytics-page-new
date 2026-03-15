@@ -9,29 +9,40 @@ function parseDate(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function parseDateTime(dateStr, timeStr) {
+  if (dateStr == null || String(dateStr).trim() === "") return null;
+  const dateOnly = String(dateStr).trim();
+  const timeOnly = timeStr != null && String(timeStr).trim() !== "" ? String(timeStr).trim() : null;
+  const combined = timeOnly ? `${dateOnly}T${timeOnly}` : `${dateOnly}T00:00:00`;
+  const d = new Date(combined);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 /** GET: return aggregated data for charts. Same filter params as reports. */
 export async function GET(request) {
   try {
     await connect();
     const { searchParams } = new URL(request.url);
-    const dateFrom = parseDate(searchParams.get("dateFrom"));
-    const dateTo = parseDate(searchParams.get("dateTo"));
+    const dateFrom = searchParams.get("dateFrom")?.trim();
+    const timeFrom = searchParams.get("timeFrom")?.trim();
+    const dateTo = searchParams.get("dateTo")?.trim();
+    const timeTo = searchParams.get("timeTo")?.trim();
+    const startDate = parseDateTime(dateFrom, timeFrom);
+    const endDate = dateTo ? (timeTo ? parseDateTime(dateTo, timeTo) : (() => { const e = new Date(dateTo + "T23:59:59.999"); return isNaN(e.getTime()) ? null : e; })()) : null;
     const assignedTo = searchParams.get("assignedTo")?.trim();
+    const excludeAssignedTo = (searchParams.getAll?.("excludeAssignedTo") || []).filter(Boolean);
     const disposedBy = searchParams.get("disposedBy")?.trim();
     const landingQueue = searchParams.get("landingQueue")?.trim();
     const createReason = searchParams.get("createReason")?.trim();
 
     const match = {};
-    if (dateFrom || dateTo) {
+    if (startDate || endDate) {
       match.createdAt = {};
-      if (dateFrom) match.createdAt.$gte = dateFrom;
-      if (dateTo) {
-        const end = new Date(dateTo);
-        end.setHours(23, 59, 59, 999);
-        match.createdAt.$lte = end;
-      }
+      if (startDate) match.createdAt.$gte = startDate;
+      if (endDate) match.createdAt.$lte = endDate;
     }
     if (assignedTo) match.assignedTo = assignedTo;
+    else if (excludeAssignedTo.length > 0) match.assignedTo = { $nin: excludeAssignedTo };
     if (disposedBy) match.disposedBy = disposedBy;
     if (landingQueue) match.landingQueue = landingQueue;
     if (createReason) match.createReason = createReason;

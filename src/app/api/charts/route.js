@@ -9,29 +9,50 @@ function parseDate(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function parseDateTime(dateStr, timeStr) {
+  if (dateStr == null || String(dateStr).trim() === "") return null;
+  const dateOnly = String(dateStr).trim();
+  const timeOnly = timeStr != null && String(timeStr).trim() !== "" ? String(timeStr).trim() : null;
+  const combined = timeOnly ? `${dateOnly}T${timeOnly}` : `${dateOnly}T00:00:00`;
+  const d = new Date(combined);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 /** GET: return aggregated data for charts. Optional same filter params as /api/reports. */
 export async function GET(request) {
   try {
     await connect();
     const { searchParams } = new URL(request.url);
-    const dateFrom = parseDate(searchParams.get("dateFrom"));
-    const dateTo = parseDate(searchParams.get("dateTo"));
+    const dateTimeFrom = searchParams.get("dateTimeFrom")?.trim();
+    const dateTimeTo = searchParams.get("dateTimeTo")?.trim();
+    let startDate = dateTimeFrom ? (() => { const d = new Date(dateTimeFrom); return isNaN(d.getTime()) ? null : d; })() : null;
+    let endDate = dateTimeTo ? (() => { const d = new Date(dateTimeTo); return isNaN(d.getTime()) ? null : d; })() : null;
+    if (!startDate || !endDate) {
+      const dateFrom = searchParams.get("dateFrom")?.trim();
+      const timeFrom = searchParams.get("timeFrom")?.trim();
+      const dateTo = searchParams.get("dateTo")?.trim();
+      const timeTo = searchParams.get("timeTo")?.trim();
+      if (!startDate) startDate = parseDateTime(dateFrom, timeFrom);
+      if (!endDate && dateTo) endDate = timeTo ? parseDateTime(dateTo, timeTo) : (() => { const e = new Date(dateTo + "T23:59:59.999"); return isNaN(e.getTime()) ? null : e; })();
+    }
     const assignToAgentName = searchParams.get("assignToAgentName")?.trim();
+    const excludeAssignToAgentName = (searchParams.getAll?.("excludeAssignToAgentName") || []).filter(Boolean);
+    const disposeByAgentName = searchParams.get("disposeByAgentName")?.trim();
+    const excludeDisposeByAgentName = (searchParams.getAll?.("excludeDisposeByAgentName") || []).filter(Boolean);
     const dispositionSubStatus = searchParams.get("dispositionSubStatus")?.trim();
     const landingQueue = searchParams.get("landingQueue")?.trim();
     const source = searchParams.get("source")?.trim();
 
     const match = {};
-    if (dateFrom || dateTo) {
+    if (startDate || endDate) {
       match.createdAt = {};
-      if (dateFrom) match.createdAt.$gte = dateFrom;
-      if (dateTo) {
-        const end = new Date(dateTo);
-        end.setHours(23, 59, 59, 999);
-        match.createdAt.$lte = end;
-      }
+      if (startDate) match.createdAt.$gte = startDate;
+      if (endDate) match.createdAt.$lte = endDate;
     }
     if (assignToAgentName) match["raw.assignToAgentName"] = assignToAgentName;
+    else if (excludeAssignToAgentName.length > 0) match["raw.assignToAgentName"] = { $nin: excludeAssignToAgentName };
+    if (disposeByAgentName) match["raw.disposeByAgentName"] = disposeByAgentName;
+    else if (excludeDisposeByAgentName.length > 0) match["raw.disposeByAgentName"] = { $nin: excludeDisposeByAgentName };
     if (dispositionSubStatus) match.dispositionSubStatus = dispositionSubStatus;
     if (landingQueue) match["raw.Landing Queue Name"] = landingQueue;
     if (source) match["raw.Source Before Assign"] = source;
@@ -103,7 +124,13 @@ export async function GET(request) {
         {
           $group: {
             _id: {
-              $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+              // Group by createdAt day using IST (+05:30) so dates
+              // match what the user sees on the dashboard filters.
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$createdAt",
+                timezone: "+05:30",
+              },
             },
             count: { $sum: 1 },
           },
