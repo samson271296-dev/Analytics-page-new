@@ -148,7 +148,7 @@ export default function TicketDetailDashboardPage() {
     setError(null);
     try {
       const q = queryString ? `?${queryString}` : "";
-      const reportsQuery = q ? `${q}&limit=50000` : "?limit=50000";
+      const reportsQuery = q ? `${q}&limit=50` : "?limit=50";
       const [metricsRes, reportsRes, chartsRes, productivityRes] = await Promise.all([
         fetch(`${API_PREFIX}/metrics${q}`),
         fetch(`${API_PREFIX}/reports${reportsQuery}`),
